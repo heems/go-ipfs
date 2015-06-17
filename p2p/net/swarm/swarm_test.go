@@ -292,4 +292,10 @@ func TestAddrBlocking(t *testing.T) {
 	if err == nil {
 		t.Fatal("dial should have failed")
 	}
+
+	swarms[0].peers.AddAddr(swarms[1].LocalPeer(), swarms[1].ListenAddresses()[0], peer.PermanentAddrTTL)
+	_, err = swarms[0].Dial(context.TODO(), swarms[1].LocalPeer())
+	if err == nil {
+		t.Fatal("dial should have failed")
+	}
 }
