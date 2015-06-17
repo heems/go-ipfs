@@ -4,6 +4,7 @@ import (
 	"bytes"
 	"fmt"
 	"io"
+	"net"
 	"sync"
 	"testing"
 	"time"
@@ -268,5 +269,27 @@ func TestConnHandler(t *testing.T) {
 	case <-gotconn:
 		t.Fatalf("should have connected to %d swarms", expect)
 	default:
+	}
+}
+
+func TestAddrBlocking(t *testing.T) {
+	ctx := context.Background()
+	swarms := makeSwarms(ctx, t, 2)
+
+	swarms[0].SetConnHandler(func(conn *Conn) {
+		t.Fatal("no connections should happen!")
+	})
+
+	_, block, err := net.ParseCIDR("127.0.0.1/8")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	swarms[1].Filters.AddDialFilter(block)
+
+	swarms[1].peers.AddAddr(swarms[0].LocalPeer(), swarms[0].ListenAddresses()[0], peer.PermanentAddrTTL)
+	_, err = swarms[1].Dial(context.TODO(), swarms[0].LocalPeer())
+	if err == nil {
+		t.Fatal("dial should have failed")
 	}
 }

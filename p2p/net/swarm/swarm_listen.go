@@ -128,6 +128,16 @@ func (s *Swarm) connHandler(c *ps.Conn) *Conn {
 	// Q: why not have a shorter handshake? think about an HTTP server on really slow conns.
 	// as long as the conn is live (TCP says its online), it tries its best. we follow suit.)
 
+	a, err := manet.FromNetAddr(c.NetConn().RemoteAddr())
+	if err != nil {
+		// If we failed to parse the address, its probably not blocked
+		log.Noticef("remote address parsing failed: %s", err)
+	} else if s.Filters.AddrBlocked(a) {
+		log.Debug("closing connection from blocked address")
+		c.Close()
+		return nil
+	}
+
 	sc, err := s.newConnSetup(ctx, c)
 	if err != nil {
 		log.Debug(err)

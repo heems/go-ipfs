@@ -5,6 +5,7 @@ package swarm
 import (
 	"fmt"
 	"net"
+	"strings"
 	"sync"
 	"time"
 
@@ -105,7 +106,8 @@ func (f *Filters) AddrBlocked(a ma.Multiaddr) bool {
 		return false
 	}
 
-	ip := net.ParseIP(addr)
+	ipstr := strings.Split(addr, ":")[0]
+	ip := net.ParseIP(ipstr)
 	for _, ft := range f.filters {
 		if ft.Contains(ip) {
 			return true
