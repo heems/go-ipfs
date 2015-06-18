@@ -299,3 +299,32 @@ func TestAddrBlocking(t *testing.T) {
 		t.Fatal("dial should have failed")
 	}
 }
+
+func TestFilterBounds(t *testing.T) {
+	ctx := context.Background()
+	swarms := makeSwarms(ctx, t, 2)
+
+	conns := make(chan struct{}, 8)
+	swarms[0].SetConnHandler(func(conn *Conn) {
+		conns <- struct{}{}
+	})
+
+	// Address that we wont be dialing from
+	_, block, err := net.ParseCIDR("192.0.0.1/8")
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	// set filter on both sides, shouldnt matter
+	swarms[1].Filters.AddDialFilter(block)
+	swarms[0].Filters.AddDialFilter(block)
+
+	connectSwarms(t, ctx, swarms)
+
+	select {
+	case <-time.After(time.Second):
+		t.Fatal("should have gotten connection")
+	case <-conns:
+		fmt.Println("got connect")
+	}
+}

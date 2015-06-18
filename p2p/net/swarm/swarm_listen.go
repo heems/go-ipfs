@@ -69,6 +69,8 @@ func (s *Swarm) setupListener(maddr ma.Multiaddr) error {
 		return err
 	}
 
+	list.SetAddrFilters(s.Filters)
+
 	if cw, ok := list.(conn.ListenerConnWrapper); ok {
 		cw.SetConnWrapper(func(c manet.Conn) manet.Conn {
 			return mconn.WrapConn(s.bwc, c)
@@ -127,16 +129,6 @@ func (s *Swarm) connHandler(c *ps.Conn) *Conn {
 	// (i.e. if TCP or UDP disconnects (or the swarm closes), we're done.
 	// Q: why not have a shorter handshake? think about an HTTP server on really slow conns.
 	// as long as the conn is live (TCP says its online), it tries its best. we follow suit.)
-
-	a, err := manet.FromNetAddr(c.NetConn().RemoteAddr())
-	if err != nil {
-		// If we failed to parse the address, its probably not blocked
-		log.Noticef("remote address parsing failed: %s", err)
-	} else if s.Filters.AddrBlocked(a) {
-		log.Debug("closing connection from blocked address")
-		c.Close()
-		return nil
-	}
 
 	sc, err := s.newConnSetup(ctx, c)
 	if err != nil {
