@@ -153,27 +153,24 @@ var listPinCmd = &cmds.Command{
 	Helptext: cmds.HelpText{
 		Tagline: "List objects pinned to local storage",
 		ShortDescription: `
-Returns a list of hashes of objects being pinned. Objects that are indirectly
-or recursively pinned are not included in the list.
+Returns a list of hashes of objects being pinned. Objects that are 
+recursively pinned are not included in the list.
 `,
 		LongDescription: `
-Returns a list of hashes of objects being pinned. Objects that are indirectly
-or recursively pinned are not included in the list.
+Returns a list of hashes of objects being pinned. Objects that are 
+recursively pinned are not included in the list.
 
 Use --type=<type> to specify the type of pinned keys to list. Valid values are:
     * "direct": pin that specific object.
-    * "recursive": pin that specific object, and indirectly pin all its decendants
-    * "indirect": pinned indirectly by an ancestor (like a refcount)
+    * "recursive": pin that specific object, and indirectly, all its descendants
     * "all"
 
-To see the ref count on indirect pins, pass the -count option flag.
 Defaults to "direct".
 `,
 	},
 
 	Options: []cmds.Option{
-		cmds.StringOption("type", "t", "The type of pinned keys to list. Can be \"direct\", \"indirect\", \"recursive\", or \"all\". Defaults to \"direct\""),
-		cmds.BoolOption("count", "n", "Show refcount when listing indirect pins"),
+		cmds.StringOption("type", "t", "The type of pinned keys to list. Can be \"direct\", \"recursive\", or \"all\". Defaults to \"direct\""),
 		cmds.BoolOption("quiet", "q", "Write just hashes of objects"),
 	},
 	Run: func(req cmds.Request, res cmds.Response) {
@@ -193,9 +190,9 @@ Defaults to "direct".
 		}
 
 		switch typeStr {
-		case "all", "direct", "indirect", "recursive":
+		case "all", "direct", "recursive":
 		default:
-			err = fmt.Errorf("Invalid type '%s', must be one of {direct, indirect, recursive, all}", typeStr)
+			err = fmt.Errorf("Invalid type '%s', must be one of {direct, recursive, all}", typeStr)
 			res.SetError(err, cmds.ErrClient)
 		}
 
@@ -205,14 +202,6 @@ Defaults to "direct".
 				keys[k.B58String()] = RefKeyObject{
 					Type:  "direct",
 					Count: 1,
-				}
-			}
-		}
-		if typeStr == "indirect" || typeStr == "all" {
-			for k, v := range n.Pinning.IndirectKeys() {
-				keys[k.B58String()] = RefKeyObject{
-					Type:  "indirect",
-					Count: v,
 				}
 			}
 		}
@@ -230,16 +219,6 @@ Defaults to "direct".
 	Type: RefKeyList{},
 	Marshalers: cmds.MarshalerMap{
 		cmds.Text: func(res cmds.Response) (io.Reader, error) {
-			typeStr, _, err := res.Request().Option("type").String()
-			if err != nil {
-				return nil, err
-			}
-
-			count, _, err := res.Request().Option("count").Bool()
-			if err != nil {
-				return nil, err
-			}
-
 			quiet, _, err := res.Request().Option("quiet").Bool()
 			if err != nil {
 				return nil, err
@@ -250,21 +229,11 @@ Defaults to "direct".
 				return nil, u.ErrCast()
 			}
 			out := new(bytes.Buffer)
-			if typeStr == "indirect" && count {
-				for k, v := range keys.Keys {
-					if quiet {
-						fmt.Fprintf(out, "%s %d\n", k, v.Count)
-					} else {
-						fmt.Fprintf(out, "%s %s %d\n", k, v.Type, v.Count)
-					}
-				}
-			} else {
-				for k, v := range keys.Keys {
-					if quiet {
-						fmt.Fprintf(out, "%s\n", k)
-					} else {
-						fmt.Fprintf(out, "%s %s\n", k, v.Type)
-					}
+			for k, v := range keys.Keys {
+				if quiet {
+					fmt.Fprintf(out, "%s\n", k)
+				} else {
+					fmt.Fprintf(out, "%s %s\n", k, v.Type)
 				}
 			}
 			return out, nil

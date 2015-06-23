@@ -157,7 +157,7 @@ func runBatchFetchTest(t *testing.T, read io.Reader) {
 
 	spl := &chunk.SizeSplitter{512}
 
-	root, err := imp.BuildDagFromReader(read, dagservs[0], spl, nil)
+	root, err := imp.BuildDagFromReader(read, dagservs[0], spl)
 	if err != nil {
 		t.Fatal(err)
 	}
@@ -213,4 +213,46 @@ func runBatchFetchTest(t *testing.T, read io.Reader) {
 	}
 
 	wg.Wait()
+}
+
+func TestFetchGraph(t *testing.T) {
+	bsi := bstest.Mocks(t, 1)[0]
+	ds := NewDAGService(bsi)
+
+	read := io.LimitReader(u.NewTimeSeededRand(), 1024*32)
+	spl := &chunk.SizeSplitter{512}
+
+	root, err := imp.BuildDagFromReader(read, ds, spl)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	done := FetchGraph(context.TODO(), root, ds)
+
+	err = <-done
+	if err != nil {
+		t.Fatal(err)
+	}
+}
+
+func TestFetchGraphOther(t *testing.T) {
+	var dservs []DAGService
+	for _, bsi := range bstest.Mocks(t, 2) {
+		dservs = append(dservs, NewDAGService(bsi))
+	}
+
+	read := io.LimitReader(u.NewTimeSeededRand(), 1024*32)
+	spl := &chunk.SizeSplitter{512}
+
+	root, err := imp.BuildDagFromReader(read, dservs[0], spl)
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	done := FetchGraph(context.TODO(), root, dservs[1])
+
+	err = <-done
+	if err != nil {
+		t.Fatal(err)
+	}
 }

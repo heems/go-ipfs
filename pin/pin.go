@@ -23,7 +23,6 @@ var emptyKey = key.B58KeyDecode("QmdfTbBqBPQ7VNxZEYEj14VmRuZBkqFbiwReogJgS1zR1n"
 const (
 	linkDirect    = "direct"
 	linkRecursive = "recursive"
-	linkIndirect  = "indirect"
 )
 
 type PinMode int
@@ -31,7 +30,6 @@ type PinMode int
 const (
 	Recursive PinMode = iota
 	Direct
-	Indirect
 	NotPinned
 )
 
@@ -51,7 +49,6 @@ type Pinner interface {
 
 	Flush() error
 	DirectKeys() []key.Key
-	IndirectKeys() map[key.Key]uint64
 	RecursiveKeys() []key.Key
 }
 
@@ -60,7 +57,7 @@ type pinner struct {
 	lock       sync.RWMutex
 	recursePin set.BlockSet
 	directPin  set.BlockSet
-	indirPin   *indirectPin
+
 	// Track the keys used for storing the pinning state, so gc does
 	// not delete them.
 	internalPin map[key.Key]struct{}
@@ -79,7 +76,6 @@ func NewPinner(dstore ds.ThreadSafeDatastore, serv mdag.DAGService) Pinner {
 	return &pinner{
 		recursePin: rcset,
 		directPin:  dirset,
-		indirPin:   newIndirectPin(),
 		dserv:      serv,
 		dstore:     dstore,
 	}
@@ -103,9 +99,12 @@ func (p *pinner) Pin(ctx context.Context, node *mdag.Node, recurse bool) error {
 			p.directPin.RemoveBlock(k)
 		}
 
-		err := p.pinLinks(ctx, node)
-		if err != nil {
-			return err
+		// fetch entire graph
+		done := mdag.FetchGraph(ctx, node, p.dserv)
+		select {
+		case <-ctx.Done():
+			return ctx.Err()
+		case <-done:
 		}
 
 		p.recursePin.AddBlock(k)
@@ -131,70 +130,16 @@ func (p *pinner) Unpin(ctx context.Context, k key.Key, recursive bool) error {
 	if p.recursePin.HasKey(k) {
 		if recursive {
 			p.recursePin.RemoveBlock(k)
-			node, err := p.dserv.Get(ctx, k)
-			if err != nil {
-				return err
-			}
-
-			return p.unpinLinks(ctx, node)
+			return nil
 		} else {
 			return fmt.Errorf("%s is pinned recursively", k)
 		}
 	} else if p.directPin.HasKey(k) {
 		p.directPin.RemoveBlock(k)
 		return nil
-	} else if p.indirPin.HasKey(k) {
-		return fmt.Errorf("%s is pinned indirectly. indirect pins cannot be removed directly", k)
 	} else {
 		return fmt.Errorf("%s is not pinned", k)
 	}
-}
-
-func (p *pinner) unpinLinks(ctx context.Context, node *mdag.Node) error {
-	for _, l := range node.Links {
-		node, err := l.GetNode(ctx, p.dserv)
-		if err != nil {
-			return err
-		}
-
-		k, err := node.Key()
-		if err != nil {
-			return err
-		}
-
-		p.indirPin.Decrement(k)
-
-		err = p.unpinLinks(ctx, node)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
-}
-
-func (p *pinner) pinIndirectRecurse(ctx context.Context, node *mdag.Node) error {
-	k, err := node.Key()
-	if err != nil {
-		return err
-	}
-
-	p.indirPin.Increment(k)
-	return p.pinLinks(ctx, node)
-}
-
-func (p *pinner) pinLinks(ctx context.Context, node *mdag.Node) error {
-	for _, ng := range p.dserv.GetDAG(ctx, node) {
-		subnode, err := ng.Get(ctx)
-		if err != nil {
-			// TODO: Maybe just log and continue?
-			return err
-		}
-		err = p.pinIndirectRecurse(ctx, subnode)
-		if err != nil {
-			return err
-		}
-	}
-	return nil
 }
 
 func (p *pinner) isInternalPin(key key.Key) bool {
@@ -208,7 +153,6 @@ func (p *pinner) IsPinned(key key.Key) bool {
 	defer p.lock.RUnlock()
 	return p.recursePin.HasKey(key) ||
 		p.directPin.HasKey(key) ||
-		p.indirPin.HasKey(key) ||
 		p.isInternalPin(key)
 }
 
@@ -218,8 +162,6 @@ func (p *pinner) RemovePinWithMode(key key.Key, mode PinMode) {
 	switch mode {
 	case Direct:
 		p.directPin.RemoveBlock(key)
-	case Indirect:
-		p.indirPin.Decrement(key)
 	case Recursive:
 		p.recursePin.RemoveBlock(key)
 	default:
@@ -267,14 +209,6 @@ func LoadPinner(d ds.ThreadSafeDatastore, dserv mdag.DAGService) (Pinner, error)
 		p.directPin = set.SimpleSetFromKeys(directKeys)
 	}
 
-	{ // load indirect set
-		refcnt, err := loadMultiset(ctx, dserv, root, linkIndirect, recordInternal)
-		if err != nil {
-			return nil, fmt.Errorf("cannot load indirect pins: %v", err)
-		}
-		p.indirPin = &indirectPin{refCounts: refcnt}
-	}
-
 	p.internalPin = internalPin
 
 	// assign services
@@ -287,11 +221,6 @@ func LoadPinner(d ds.ThreadSafeDatastore, dserv mdag.DAGService) (Pinner, error)
 // DirectKeys returns a slice containing the directly pinned keys
 func (p *pinner) DirectKeys() []key.Key {
 	return p.directPin.GetKeys()
-}
-
-// IndirectKeys returns a slice containing the indirectly pinned keys
-func (p *pinner) IndirectKeys() map[key.Key]uint64 {
-	return p.indirPin.GetRefs()
 }
 
 // RecursiveKeys returns a slice containing the recursively pinned keys
@@ -332,16 +261,6 @@ func (p *pinner) Flush() error {
 		}
 	}
 
-	{
-		n, err := storeMultiset(ctx, p.dserv, p.indirPin.GetRefs(), recordInternal)
-		if err != nil {
-			return err
-		}
-		if err := root.AddNodeLink(linkIndirect, n); err != nil {
-			return err
-		}
-	}
-
 	k, err := p.dserv.Add(root)
 	if err != nil {
 		return err
@@ -364,7 +283,5 @@ func (p *pinner) PinWithMode(k key.Key, mode PinMode) {
 		p.recursePin.AddBlock(k)
 	case Direct:
 		p.directPin.AddBlock(k)
-	case Indirect:
-		p.indirPin.Increment(k)
 	}
 }

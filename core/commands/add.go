@@ -119,7 +119,6 @@ remains to be implemented.
 					return
 				}
 
-				n.Pinning.RemovePinWithMode(rnk, pin.Indirect)
 				n.Pinning.PinWithMode(rnk, pin.Recursive)
 
 				err = n.Pinning.Flush()
@@ -221,7 +220,6 @@ func add(n *core.IpfsNode, reader io.Reader) (*dag.Node, error) {
 		reader,
 		n.DAG,
 		chunk.DefaultSplitter,
-		importer.PinIndirectCB(n.Pinning),
 	)
 	if err != nil {
 		return nil, err
@@ -298,12 +296,10 @@ func addDir(n *core.IpfsNode, dir files.File, out chan interface{}, progress boo
 		return nil, err
 	}
 
-	k, err := n.DAG.Add(tree)
+	_, err = n.DAG.Add(tree)
 	if err != nil {
 		return nil, err
 	}
-
-	n.Pinning.PinWithMode(k, pin.Indirect)
 
 	return tree, nil
 }

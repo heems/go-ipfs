@@ -112,39 +112,48 @@ func (n *dagService) Remove(nd *Node) error {
 
 // FetchGraph asynchronously fetches all nodes that are children of the given
 // node, and returns a channel that may be waited upon for the fetch to complete
-func FetchGraph(ctx context.Context, root *Node, serv DAGService) chan struct{} {
-	log.Warning("Untested.")
-	var wg sync.WaitGroup
-	done := make(chan struct{})
+func FetchGraph(ctx context.Context, root *Node, serv DAGService) chan error {
+	//done := make(chan error, len(root.Links))
 
+	var keys []key.Key
 	for _, l := range root.Links {
+		keys = append(keys, key.Key(l.Hash))
+	}
+
+	out := make(chan error)
+	nodes := serv.GetNodes(ctx, keys)
+
+	var wg sync.WaitGroup
+	for _, n := range nodes {
 		wg.Add(1)
-		go func(lnk *Link) {
-
-			// Signal child is done on way out
+		go func(n NodeGetter) {
 			defer wg.Done()
-			select {
-			case <-ctx.Done():
-				return
-			}
-
-			nd, err := lnk.GetNode(ctx, serv)
+			nd, err := n.Get(ctx)
 			if err != nil {
-				log.Debug(err)
-				return
+				select {
+				case out <- err:
+					return
+				case <-ctx.Done():
+				}
 			}
 
-			// Wait for children to finish
-			<-FetchGraph(ctx, nd, serv)
-		}(l)
+			err = <-FetchGraph(ctx, nd, serv)
+			if err != nil {
+				select {
+				case out <- err:
+					return
+				case <-ctx.Done():
+				}
+			}
+		}(n)
 	}
 
 	go func() {
 		wg.Wait()
-		done <- struct{}{}
+		close(out)
 	}()
 
-	return done
+	return out
 }
 
 // FindLinks searches this nodes links for the given key,
