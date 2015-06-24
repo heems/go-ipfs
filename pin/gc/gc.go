@@ -59,10 +59,19 @@ func GC(ctx context.Context, bs bstore.Blockstore, pn pin.Pinner) (<-chan key.Ke
 
 	gcs := NewGCSet()
 	for _, k := range pn.RecursiveKeys() {
-		gcs.AddDag(ds, k)
+		err := gcs.AddDag(ds, k)
+		if err != nil {
+			return nil, err
+		}
 	}
 	for _, k := range pn.DirectKeys() {
 		gcs.Add(k)
+	}
+	for _, k := range pn.InternalPins() {
+		err := gcs.AddDag(ds, k)
+		if err != nil {
+			return nil, err
+		}
 	}
 
 	keychan, err := bs.AllKeysChan(ctx)

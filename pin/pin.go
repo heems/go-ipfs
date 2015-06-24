@@ -50,6 +50,7 @@ type Pinner interface {
 	Flush() error
 	DirectKeys() []key.Key
 	RecursiveKeys() []key.Key
+	InternalPins() []key.Key
 }
 
 // pinner implements the Pinner interface
@@ -261,16 +262,33 @@ func (p *pinner) Flush() error {
 		}
 	}
 
+	// add the empty node, its referenced by the pin sets but never created
+	_, err := p.dserv.Add(new(mdag.Node))
+	if err != nil {
+		return err
+	}
+
 	k, err := p.dserv.Add(root)
 	if err != nil {
 		return err
 	}
+
 	internalPin[k] = struct{}{}
 	if err := p.dstore.Put(pinDatastoreKey, []byte(k)); err != nil {
 		return fmt.Errorf("cannot store pin state: %v", err)
 	}
 	p.internalPin = internalPin
 	return nil
+}
+
+func (p *pinner) InternalPins() []key.Key {
+	p.lock.Lock()
+	defer p.lock.Unlock()
+	var out []key.Key
+	for k, _ := range p.internalPin {
+		out = append(out, k)
+	}
+	return out
 }
 
 // PinWithMode allows the user to have fine grained control over pin
