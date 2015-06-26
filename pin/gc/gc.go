@@ -50,6 +50,14 @@ func (gcs *GCSet) AddDag(ds dag.DAGService, root key.Key) error {
 	return nil
 }
 
+// GC performs a mark and sweep garbage collection of the blocks in the blockstore
+// first, it creates a 'marked' set and adds to it the following:
+// - all recursively pinned blocks, plus all of their descendants (recursively)
+// - all directly pinned blocks
+// - all blocks utilized internally by the pinner
+//
+// The routine then iterates over every block in the blockstore and
+// deletes any block that is not found in the marked set.
 func GC(ctx context.Context, bs bstore.Blockstore, pn pin.Pinner) (<-chan key.Key, error) {
 	bsrv, err := bserv.New(bs, offline.Exchange(bs))
 	if err != nil {
@@ -57,6 +65,8 @@ func GC(ctx context.Context, bs bstore.Blockstore, pn pin.Pinner) (<-chan key.Ke
 	}
 	ds := dag.NewDAGService(bsrv)
 
+	// GCSet currently implemented in memory, in the future, may be bloom filter or
+	// disk backed to conserve memory.
 	gcs := NewGCSet()
 	for _, k := range pn.RecursiveKeys() {
 		err := gcs.AddDag(ds, k)
