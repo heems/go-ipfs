@@ -7,7 +7,6 @@ import (
 	ic "github.com/ipfs/go-ipfs/p2p/crypto"
 	inet "github.com/ipfs/go-ipfs/p2p/net"
 	peer "github.com/ipfs/go-ipfs/p2p/peer"
-
 	ma "github.com/ipfs/go-ipfs/Godeps/_workspace/src/github.com/jbenet/go-multiaddr"
 )
 
@@ -28,7 +27,9 @@ type conn struct {
 	link    *link
 	rconn   *conn // counterpart
 	streams list.List
-
+	
+	BytesOut int	//  number of bytes written by local peer
+	
 	sync.RWMutex
 }
 

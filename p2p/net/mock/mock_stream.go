@@ -1,6 +1,7 @@
 package mocknet
 
 import (
+	//"fmt"
 	"bytes"
 	"io"
 	"time"
@@ -30,7 +31,7 @@ func NewStream(w io.Writer, r io.Reader) *stream {
 		Writer:    w,
 		toDeliver: make(chan *transportObject),
 	}
-
+	
 	s.proc = process.WithTeardown(s.teardown)
 	s.proc.Go(s.transport)
 	return s
@@ -46,6 +47,7 @@ func (s *stream) Write(p []byte) (n int, err error) {
 		return 0, io.ErrClosedPipe
 	case s.toDeliver <- &transportObject{msg: p, arrivalTime: t}:
 	}
+	
 	return len(p), nil
 }
 
@@ -76,6 +78,13 @@ func (s *stream) Conn() inet.Conn {
 	return s.conn
 }
 
+func (s *stream) deliver(p []byte) error{
+	n, err := s.Writer.Write(p)
+	s.conn.BytesOut += n
+	//fmt.Println(string(p))
+	return err
+}
+
 // transport will grab message arrival times, wait until that time, and
 // then write the message out when it is scheduled to arrive
 func (s *stream) transport(proc process.Process) {
@@ -87,7 +96,7 @@ func (s *stream) transport(proc process.Process) {
 	// done only when arrival time makes sense.
 	drainBuf := func() {
 		if buf.Len() > 0 {
-			_, err := s.Writer.Write(buf.Bytes())
+			err := s.deliver(buf.Bytes())
 			if err != nil {
 				return
 			}
@@ -121,7 +130,7 @@ func (s *stream) transport(proc process.Process) {
 		drainBuf()
 
 		// write this message.
-		_, err := s.Writer.Write(o.msg)
+		err := s.deliver(o.msg)
 		if err != nil {
 			log.Error("mock_stream", err)
 		}

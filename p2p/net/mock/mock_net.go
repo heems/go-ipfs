@@ -19,6 +19,7 @@ import (
 	context "github.com/ipfs/go-ipfs/Godeps/_workspace/src/golang.org/x/net/context"
 )
 
+
 // mocknet implements mocknet.Mocknet
 type mocknet struct {
 	nets  map[peer.ID]*peernet
@@ -341,6 +342,11 @@ func (mn *mocknet) LinkDefaults() LinkOptions {
 	mn.RLock()
 	defer mn.RUnlock()
 	return mn.linkDefaults
+}
+
+func (mn *mocknet) GetBytesOut(p1, p2 peer.ID) int {
+	n1 := mn.nets[p1]
+	return n1.GetBytesOut(p2)
 }
 
 // netSlice for sorting by peer

@@ -8,7 +8,7 @@ import (
 	ic "github.com/ipfs/go-ipfs/p2p/crypto"
 	inet "github.com/ipfs/go-ipfs/p2p/net"
 	peer "github.com/ipfs/go-ipfs/p2p/peer"
-
+	
 	ma "github.com/ipfs/go-ipfs/Godeps/_workspace/src/github.com/jbenet/go-multiaddr"
 	"github.com/ipfs/go-ipfs/Godeps/_workspace/src/github.com/jbenet/goprocess"
 	goprocessctx "github.com/ipfs/go-ipfs/Godeps/_workspace/src/github.com/jbenet/goprocess/context"
@@ -296,6 +296,22 @@ func (pn *peernet) ClosePeer(p peer.ID) error {
 		c.Close()
 	}
 	return nil
+}
+
+//  Returns number of sent bytes to given peer
+func (pn *peernet) GetBytesOut(remote peer.ID) (bout int) {
+	pn.RLock()
+	cs, found := pn.connsByPeer[remote]
+	if !found {
+		pn.RUnlock()
+		return
+	}
+
+	for c := range cs {
+		bout += c.BytesOut
+	}
+	pn.RUnlock()
+	return
 }
 
 // BandwidthTotals returns the total amount of bandwidth transferred
