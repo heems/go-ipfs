@@ -1,12 +1,11 @@
 package mocknet
 
 import (
-	//"fmt"
 	"bytes"
 	"io"
 	"time"
 
-	process "github.com/jbenet/goprocess"
+	process "github.com/ipfs/go-ipfs/Godeps/_workspace/src/github.com/jbenet/goprocess"
 
 	inet "github.com/ipfs/go-ipfs/p2p/net"
 )
