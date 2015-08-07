@@ -298,6 +298,22 @@ func (pn *peernet) ClosePeer(p peer.ID) error {
 	return nil
 }
 
+//  Returns number of sent bytes to given peer
+func (pn *peernet) GetBytesOut(remote peer.ID) (bout int) {
+	pn.RLock()
+	cs, found := pn.connsByPeer[remote]
+	if !found {
+		pn.RUnlock()
+		return
+	}
+
+	for c := range cs {
+		bout += c.BytesOut
+	}
+	pn.RUnlock()
+	return
+}
+
 // BandwidthTotals returns the total amount of bandwidth transferred
 func (pn *peernet) BandwidthTotals() (in uint64, out uint64) {
 	// need to implement this. probably best to do it in swarm this time.

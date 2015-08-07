@@ -17,6 +17,10 @@ import (
 	ma "github.com/ipfs/go-ipfs/Godeps/_workspace/src/github.com/jbenet/go-multiaddr"
 )
 
+type MeasuredNet interface {
+	GetBytesOut(p1, p2 peer.ID) int
+}
+
 type Mocknet interface {
 
 	// GenPeer generates a peer and its inet.Network in the Mocknet
@@ -62,7 +66,6 @@ type Mocknet interface {
 }
 
 // LinkOptions are used to change aspects of the links.
-// Sorry but they dont work yet :(
 type LinkOptions struct {
 	Latency   time.Duration
 	Bandwidth float64 // in bytes-per-second

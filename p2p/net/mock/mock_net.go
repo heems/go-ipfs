@@ -343,6 +343,11 @@ func (mn *mocknet) LinkDefaults() LinkOptions {
 	return mn.linkDefaults
 }
 
+func (mn *mocknet) GetBytesOut(p1, p2 peer.ID) int {
+	n1 := mn.nets[p1]
+	return n1.GetBytesOut(p2)
+}
+
 // netSlice for sorting by peer
 type netSlice []inet.Network
 
