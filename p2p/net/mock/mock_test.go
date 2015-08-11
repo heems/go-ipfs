@@ -1,6 +1,7 @@
 package mocknet
 
 import (
+	"fmt"
 	"bytes"
 	"io"
 	"math"
@@ -580,6 +581,74 @@ func TestLimitedStreams(t *testing.T) {
 	}
 }
 
+func TestLatency(t *testing.T) {
+	mn, err := FullMeshConnected(context.Background(), 2)
+	if err != nil {
+		t.Fatal(err)
+	}
+	
+	var before time.Time
+	handler := func(s inet.Stream) {
+		defer s.Close()
+		b := make([]byte, 4)
+		fmt.Println("in handler")
+		if _, err := io.ReadFull(s, b); err != nil {
+			t.Fatal(err)
+		}
+		fmt.Println("read in handler")
+		if !within(time.Since(before), time.Duration(time.Millisecond*100), time.Millisecond * 10) {
+			t.Log(time.Since(before), string(b))
+			t.Fatal("fuck")
+		}
+		fmt.Println("after within")
+		if !bytes.Equal(b, []byte("ping")) {
+			t.Fatal("bytes mismatch")
+		}
+		if _, err := s.Write([]byte("pong")); err != nil {
+			t.Fatal(err)
+		}
+	}
+	
+	hosts := mn.Hosts()
+	for _, h := range mn.Hosts() {
+		h.SetStreamHandler(protocol.TestingID, handler)
+	}
+
+	peers := mn.Peers()
+	links := mn.LinksBetweenPeers(peers[0], peers[1])
+	//  100ms latency
+	lat := time.Millisecond * 500
+	opts := links[0].Options()
+	opts.Latency = lat
+	for _, link := range links {
+		link.SetOptions(opts)
+	}
+
+	s, err := hosts[0].NewStream(protocol.TestingID, hosts[1].ID())
+	if err != nil {
+		t.Fatal(err)
+	}
+
+	before = time.Now()
+	fmt.Println("b4 write")
+	if _, err := s.Write([]byte("ping")); err != nil {
+		panic(err)
+	}
+	
+	fmt.Println("after write")
+	buf := make([]byte, 4)
+	if _, err := io.ReadFull(s, buf); err != nil {
+		t.Fatal(err)
+	}
+	fmt.Println("read in main")
+	
+	if !within(time.Since(before), time.Duration(time.Millisecond*200), time.Millisecond * 10) {
+		t.Fatal("fuck")
+	}
+}
+
+
+
 func TestBytesOut(t *testing.T) {
 	mn, err := FullMeshConnected(context.Background(), 2)
 	if err != nil {
@@ -596,6 +665,7 @@ func TestBytesOut(t *testing.T) {
 			}
 			wg.Done()
 		}
+		
 		s.Close()
 	}
 

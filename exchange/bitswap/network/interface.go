@@ -6,6 +6,7 @@ import (
 	bsmsg "github.com/ipfs/go-ipfs/exchange/bitswap/message"
 	peer "github.com/ipfs/go-ipfs/p2p/peer"
 	protocol "github.com/ipfs/go-ipfs/p2p/protocol"
+	host "github.com/ipfs/go-ipfs/p2p/host"
 )
 
 var ProtocolBitswap protocol.ID = "/ipfs/bitswap"
@@ -24,7 +25,7 @@ type BitSwapNetwork interface {
 	SetDelegate(Receiver)
 
 	ConnectTo(context.Context, peer.ID) error
-
+	
 	Routing
 }
 
@@ -48,4 +49,12 @@ type Routing interface {
 
 	// Provide provides the key to the network
 	Provide(context.Context, key.Key) error
+}
+
+type SmartNet interface{
+	BitSwapNetwork
+	
+	//DisconnectFrom(peer.ID) error
+	
+	Host() host.Host
 }

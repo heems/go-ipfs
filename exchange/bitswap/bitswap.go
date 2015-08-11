@@ -3,6 +3,7 @@
 package bitswap
 
 import (
+	"fmt"
 	"errors"
 	"math"
 	"sync"
@@ -261,7 +262,6 @@ func (bs *Bitswap) connectToProviders(ctx context.Context, entries []wantlist.En
 
 	ctx, cancel := context.WithCancel(ctx)
 	defer cancel()
-
 	// Get providers for all entries in wantlist (could take a while)
 	wg := sync.WaitGroup{}
 	for _, e := range entries {
@@ -273,8 +273,15 @@ func (bs *Bitswap) connectToProviders(ctx context.Context, entries []wantlist.En
 			defer cancel()
 			providers := bs.network.FindProvidersAsync(child, k, maxProvidersPerRequest)
 			for prov := range providers {
+				wg.Add(1)
 				go func(p peer.ID) {
 					bs.network.ConnectTo(ctx, p)
+					fmt.Println("out shouldconnect")
+					if !bs.engine.ShouldConnect(p, &bs.network){
+						fmt.Println("in shoudlconnect")
+						bs.PeerDisconnected(p)
+					}
+					wg.Done()
 				}(prov)
 			}
 		}(e.Key)

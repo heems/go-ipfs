@@ -1,6 +1,7 @@
 package decision
 
 import (
+	"strconv"
 	"errors"
 	"fmt"
 	"math"
@@ -16,6 +17,7 @@ import (
 	message "github.com/ipfs/go-ipfs/exchange/bitswap/message"
 	peer "github.com/ipfs/go-ipfs/p2p/peer"
 	testutil "github.com/ipfs/go-ipfs/util/testutil"
+	wantlist "github.com/ipfs/go-ipfs/exchange/bitswap/wantlist"
 )
 
 type peerAndEngine struct {
@@ -160,6 +162,77 @@ func TestPartnerWantsThenCancels(t *testing.T) {
 				t.Fatal(err)
 			}
 		}
+	}
+}
+
+func TestLedgerCompare(t *testing.T) {
+	ctx, cancel := context.WithCancel(context.Background())
+	defer cancel()
+	fastsend := newEngine(ctx, "SpeedySam")
+	slowsend := newEngine(ctx, "LethargicLarry")
+	receiver := newEngine(ctx, "Bert")
+	
+	//  Populate requests
+	for i := 0; i < 5; i++{
+		key := blocks.NewBlock([]byte(strconv.Itoa(i))).Key()
+		req := wantlist.Entry{Key: key, Priority: 0,}
+		receiver.Engine.peerRequestQueue.Push(req, fastsend.Peer)
+		receiver.Engine.peerRequestQueue.Push(req, slowsend.Peer)
+	}
+	
+	fmt.Println("first")
+	// Simulate getting more blocks from fast peer
+	for i := 0; i < 100; i++ {
+
+		m := message.New(false)
+		content := []string{"this", "is", "message", "i"}
+		m.AddBlock(blocks.NewBlock([]byte(strings.Join(content, " "))))
+
+		fastsend.Engine.MessageSent(receiver.Peer, m)
+		receiver.Engine.MessageReceived(fastsend.Peer, m)
+	}
+	
+	//  Ensure fastsend is at front of queue
+	next := receiver.Engine.peerRequestQueue.Pop()
+	if next.Target != fastsend.Peer{
+		t.Fatal("Fastsend was not top request :'(.")
+	}
+	
+	fmt.Println("second")
+	//  larry starts sending messages
+	for i := 0; i < 50; i++ {
+		m := message.New(false)
+		content := []string{"this", "is", "message", "i"}
+		m.AddBlock(blocks.NewBlock([]byte(strings.Join(content, " "))))
+
+		slowsend.Engine.MessageSent(receiver.Peer, m)
+		receiver.Engine.MessageReceived(slowsend.Peer, m)
+	}
+	
+	//  fastsend should still be at the front
+	next = receiver.Engine.peerRequestQueue.Pop()
+	if next.Target != fastsend.Peer{
+		t.Fatal("Fastsend was not top request :'(.")
+	}
+	
+	fmt.Println("third")
+	//  lethargic larry buys better bandwidth
+	for i := 0; i < 100; i++ {
+		m := message.New(false)
+		content := []string{"this", "is", "message", "i"}
+		m.AddBlock(blocks.NewBlock([]byte(strings.Join(content, " "))))
+
+		slowsend.Engine.MessageSent(receiver.Peer, m)
+		receiver.Engine.MessageReceived(slowsend.Peer, m)
+	}
+	
+	//  larry should be at the front
+	fmt.Println(receiver.Engine.peerRequestQueue)
+	next = receiver.Engine.peerRequestQueue.Pop()
+	if next.Target != slowsend.Peer{
+		t.Log(slowsend.Peer, fastsend.Peer)
+		t.Log(next.Target)
+		t.Fatal("Slowsend was not top request :'(.")
 	}
 }
 

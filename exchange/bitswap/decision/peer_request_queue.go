@@ -1,6 +1,7 @@
 package decision
 
 import (
+	"fmt"
 	"sync"
 	"time"
 
@@ -23,7 +24,16 @@ func newPRQ() peerRequestQueue {
 	return &prq{
 		taskMap:  make(map[string]*peerRequestTask),
 		partners: make(map[peer.ID]*activePartner),
-		pQueue:   pq.New(partnerCompare),
+		pQueue:   pq.New(ledgerCompare),
+	}
+}
+
+func newSmartPRQ(l map[peer.ID]*ledger) peerRequestQueue {
+	return &prq{
+		taskMap:  make(map[string]*peerRequestTask),
+		partners: make(map[peer.ID]*activePartner),
+		pQueue:   pq.New(ledgerCompare),
+		ledgerMap: l,
 	}
 }
 
@@ -38,6 +48,8 @@ type prq struct {
 	pQueue   pq.PQ
 	taskMap  map[string]*peerRequestTask
 	partners map[peer.ID]*activePartner
+	//  ledger map updated by engine used to make informed decisions
+	ledgerMap map[peer.ID]*ledger
 }
 
 // Push currently adds a new peerRequestTask to the end of the list
@@ -46,7 +58,7 @@ func (tl *prq) Push(entry wantlist.Entry, to peer.ID) {
 	defer tl.lock.Unlock()
 	partner, ok := tl.partners[to]
 	if !ok {
-		partner = newActivePartner()
+		partner = newActivePartner(tl.ledgerMap, to)
 		tl.pQueue.Push(partner)
 		tl.partners[to] = partner
 	}
@@ -89,6 +101,10 @@ func (tl *prq) Pop() *peerRequestTask {
 	if tl.pQueue.Len() == 0 {
 		return nil
 	}
+	//  need this cause ledger maps are changing, so we need to reupdate the pq
+	//  before popping.  this also doesn't work in lots of cases so i need to find
+	//  a good way to re-sort everything in the prq when needed.
+	tl.pQueue.Update(0)
 	partner := tl.pQueue.Pop().(*activePartner)
 
 	var out *peerRequestTask
@@ -198,12 +214,18 @@ type activePartner struct {
 
 	// priority queue of tasks belonging to this peer
 	taskQueue pq.PQ
+	
+	//  kinda dirty...
+	ledgerMap map[peer.ID]*ledger
+	pid peer.ID
 }
 
-func newActivePartner() *activePartner {
+func newActivePartner(lm map[peer.ID]*ledger, peerid peer.ID) *activePartner {
 	return &activePartner{
 		taskQueue:    pq.New(wrapCmp(V1)),
 		activeBlocks: make(map[key.Key]struct{}),
+		ledgerMap: lm,
+		pid: peerid,
 	}
 }
 
@@ -227,6 +249,44 @@ func partnerCompare(a, b pq.Elem) bool {
 		return pa.taskQueue.Len() > pb.taskQueue.Len()
 	}
 	return pa.active < pb.active
+}
+
+func ledgerCompare(a, b pq.Elem) bool {
+	pa := a.(*activePartner)
+	pb := b.(*activePartner)
+	
+	// having no blocks in their wantlist means lowest priority
+	// having both of these checks ensures stability of the sort
+	if pa.requests == 0 {
+		fmt.Println("0 a reqs?")
+		return false
+	}
+	if pb.requests == 0 {
+		fmt.Println("0 b reqs?")
+		return true
+	}
+	
+	pal := pa.GetLedger()
+	pbl := pb.GetLedger()
+	
+	//  Favor peer with existing ledger info?
+	if pal == nil && pbl == nil{
+		return partnerCompare(a, b)
+	} else if pal == nil {
+		return false
+	} else if pbl == nil {
+		return true
+	}
+	
+	//  favor peers we've sent less to maybe?  not sure about this yet 
+	if pal.Accounting.BytesRecv == pbl.Accounting.BytesRecv {
+		return pal.Accounting.BytesSent < pbl.Accounting.BytesSent
+	}
+	
+	//  peers who've sent us more stuff should be higher priority
+	fmt.Println("here", pal.Accounting.BytesRecv, pbl.Accounting.BytesRecv)
+	fmt.Println(pa.pid)
+	return pal.Accounting.BytesRecv > pbl.Accounting.BytesRecv
 }
 
 // StartTask signals that a task was started for this partner
@@ -256,4 +316,8 @@ func (p *activePartner) Index() int {
 // SetIndex implements pq.Elem
 func (p *activePartner) SetIndex(i int) {
 	p.index = i
+}
+
+func (p *activePartner) GetLedger() *ledger{
+	return p.ledgerMap[p.pid]
 }

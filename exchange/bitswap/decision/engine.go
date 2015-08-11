@@ -2,6 +2,8 @@
 package decision
 
 import (
+	"fmt"
+	"time"
 	"sync"
 
 	context "github.com/ipfs/go-ipfs/Godeps/_workspace/src/golang.org/x/net/context"
@@ -11,6 +13,8 @@ import (
 	wl "github.com/ipfs/go-ipfs/exchange/bitswap/wantlist"
 	peer "github.com/ipfs/go-ipfs/p2p/peer"
 	eventlog "github.com/ipfs/go-ipfs/thirdparty/eventlog"
+	network "github.com/ipfs/go-ipfs/exchange/bitswap/network"
+	pinger "github.com/ipfs/go-ipfs/p2p/protocol/ping"
 )
 
 // TODO consider taking responsibility for other types of requests. For
@@ -87,15 +91,41 @@ type Engine struct {
 }
 
 func NewEngine(ctx context.Context, bs bstore.Blockstore) *Engine {
+	lm := make(map[peer.ID]*ledger)
 	e := &Engine{
-		ledgerMap:        make(map[peer.ID]*ledger),
+		ledgerMap:        lm,
 		bs:               bs,
-		peerRequestQueue: newPRQ(),
+		peerRequestQueue: newSmartPRQ(lm),
 		outbox:           make(chan (<-chan *Envelope), outboxChanBuffer),
 		workSignal:       make(chan struct{}, 1),
 	}
 	go e.taskWorker(ctx)
 	return e
+}
+
+func (e *Engine) Ping(p peer.ID, bsnet *network.BitSwapNetwork) time.Duration{
+	ctx, cancel := context.WithTimeout(context.Background(), time.Second)
+	defer cancel()
+	host := (*bsnet).(network.SmartNet).Host()
+	ps := pinger.NewPingService(host)
+	
+	latChan, err := ps.Ping(ctx, p)
+	if err != nil{
+		fmt.Println("Ping error.")
+		return 0
+	}
+	
+	lat := <-latChan
+	fmt.Println("lat", lat)
+	return lat
+}
+
+func (e *Engine) ShouldConnect(p peer.ID, bsnet *network.BitSwapNetwork) bool{
+	//  placeholder
+	if e.Ping(p, bsnet) > time.Millisecond * 100{
+		return false
+	}
+	return true
 }
 
 func (e *Engine) WantlistForPeer(p peer.ID) (out []wl.Entry) {
