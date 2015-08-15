@@ -40,6 +40,7 @@ import (
 	dht "github.com/ipfs/go-ipfs/routing/dht"
 	kb "github.com/ipfs/go-ipfs/routing/kbucket"
 	offroute "github.com/ipfs/go-ipfs/routing/offline"
+	nilrouting "github.com/ipfs/go-ipfs/routing/none"
 
 	bstore "github.com/ipfs/go-ipfs/blocks/blockstore"
 	bserv "github.com/ipfs/go-ipfs/blockservice"
@@ -130,8 +131,12 @@ func NewIPFSNode(ctx context.Context, option ConfigOption) (*IpfsNode, error) {
 		return nil, err
 	}
 
-	node.proc = goprocessctx.WithContextAndTeardown(ctx, node.teardown)
-	node.ctx = ctx
+	if node.ctx == nil {
+		node.ctx = ctx
+	}
+	if node.proc == nil {
+		node.proc = goprocessctx.WithContextAndTeardown(node.ctx, node.teardown)
+	}
 
 	success := false // flip to true after all sub-system inits succeed
 	defer func() {
@@ -216,6 +221,9 @@ func standardWithRouting(r repo.Repo, online bool, routingOption RoutingOption, 
 			}(),
 			Repo: r,
 		}
+
+		n.ctx = ctx
+		n.proc = goprocessctx.WithContextAndTeardown(ctx, n.teardown)
 
 		// setup Peerstore
 		n.Peerstore = peer.NewPeerstore()
@@ -339,9 +347,9 @@ func (n *IpfsNode) startOnlineServicesWithHost(ctx context.Context, host p2phost
 	n.PeerHost = rhost.Wrap(host, n.Routing)
 
 	// setup exchange service
-	const alwaysSendToPeer = true // use YesManStrategy
+	//const alwaysSendToPeer = true // use YesManStrategy
 	bitswapNetwork := bsnet.NewFromIpfsHost(n.PeerHost, n.Routing)
-	n.Exchange = bitswap.New(ctx, n.Identity, bitswapNetwork, n.Blockstore, alwaysSendToPeer)
+	n.Exchange = bitswap.New(ctx, n.Identity, bitswapNetwork, n.Blockstore, nil)
 
 	// setup name system
 	n.Namesys = namesys.NewNameSystem(n.Routing)
@@ -373,6 +381,13 @@ func (n *IpfsNode) teardown() error {
 	closers := []io.Closer{
 		n.Exchange,
 		n.Repo,
+	}
+
+	if n.Mounts.Ipfs != nil {
+		closers = append(closers, mount.Closer(n.Mounts.Ipfs))
+	}
+	if n.Mounts.Ipns != nil {
+		closers = append(closers, mount.Closer(n.Mounts.Ipns))
 	}
 
 	// Filesystem needs to be closed before network, dht, and blockservice
@@ -601,3 +616,4 @@ type RoutingOption func(context.Context, p2phost.Host, ds.ThreadSafeDatastore) (
 type DiscoveryOption func(p2phost.Host) (discovery.Service, error)
 
 var DHTOption RoutingOption = constructDHTRouting
+var NilOption RoutingOption = nilrouting.ConstructNilRouting
