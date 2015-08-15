@@ -90,12 +90,12 @@ type Engine struct {
 	ledgerMap map[peer.ID]*ledger
 }
 
-func NewEngine(ctx context.Context, bs bstore.Blockstore) *Engine {
+func NewEngine(ctx context.Context, bs bstore.Blockstore, df Strategy) *Engine {
 	lm := make(map[peer.ID]*ledger)
 	e := &Engine{
 		ledgerMap:        lm,
 		bs:               bs,
-		peerRequestQueue: newSmartPRQ(lm),
+		peerRequestQueue: newSmartPRQ(lm, df),
 		outbox:           make(chan (<-chan *Envelope), outboxChanBuffer),
 		workSignal:       make(chan struct{}, 1),
 	}
@@ -263,6 +263,9 @@ func (e *Engine) MessageReceived(p peer.ID, m bsmsg.BitSwapMessage) error {
 			}
 		}
 	}
+	
+	e.peerRequestQueue.UpdatePeer(p)
+	
 	return nil
 }
 
@@ -282,6 +285,8 @@ func (e *Engine) MessageSent(p peer.ID, m bsmsg.BitSwapMessage) error {
 		l.wantList.Remove(block.Key())
 		e.peerRequestQueue.Remove(block.Key(), p)
 	}
+	
+	e.peerRequestQueue.UpdatePeer(p)
 
 	return nil
 }

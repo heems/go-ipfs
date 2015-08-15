@@ -30,7 +30,7 @@ func newEngine(ctx context.Context, idStr string) peerAndEngine {
 		Peer: peer.ID(idStr),
 		//Strategy: New(true),
 		Engine: NewEngine(ctx,
-			blockstore.NewBlockstore(dssync.MutexWrap(ds.NewMapDatastore()))),
+			blockstore.NewBlockstore(dssync.MutexWrap(ds.NewMapDatastore())), Nice),
 	}
 }
 
@@ -104,7 +104,8 @@ func peerIsPartner(p peer.ID, e *Engine) bool {
 
 func TestOutboxClosedWhenEngineClosed(t *testing.T) {
 	t.SkipNow() // TODO implement *Engine.Close
-	e := NewEngine(context.Background(), blockstore.NewBlockstore(dssync.MutexWrap(ds.NewMapDatastore())))
+	e := NewEngine(context.Background(), blockstore.NewBlockstore(dssync.MutexWrap(ds.NewMapDatastore())), Nice)
+	
 	var wg sync.WaitGroup
 	wg.Add(1)
 	go func() {
@@ -152,7 +153,7 @@ func TestPartnerWantsThenCancels(t *testing.T) {
 			cancels := testcase[1]
 			keeps := stringsComplement(set, cancels)
 
-			e := NewEngine(context.Background(), bs)
+			e := NewEngine(context.Background(), bs, Nice)
 			partner := testutil.RandPeerIDFatal(t)
 
 			partnerWants(e, set, partner)
@@ -170,12 +171,14 @@ func TestLedgerCompare(t *testing.T) {
 	defer cancel()
 	fastsend := newEngine(ctx, "SpeedySam")
 	slowsend := newEngine(ctx, "LethargicLarry")
-	receiver := newEngine(ctx, "Bert")
+	other := newEngine(ctx, "IrrelevantIngrid")
+	receiver := newEngine(ctx, "Bert") 
 	
 	//  Populate requests
 	for i := 0; i < 5; i++{
 		key := blocks.NewBlock([]byte(strconv.Itoa(i))).Key()
 		req := wantlist.Entry{Key: key, Priority: 0,}
+		receiver.Engine.peerRequestQueue.Push(req, other.Peer)
 		receiver.Engine.peerRequestQueue.Push(req, fastsend.Peer)
 		receiver.Engine.peerRequestQueue.Push(req, slowsend.Peer)
 	}

@@ -54,7 +54,7 @@ type Routing interface {
 type SmartNet interface{
 	BitSwapNetwork
 	
-	//DisconnectFrom(peer.ID) error
+	DisconnectFrom(peer.ID) error
 	
 	Host() host.Host
 }

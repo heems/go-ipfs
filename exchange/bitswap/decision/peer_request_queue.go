@@ -11,11 +11,23 @@ import (
 	pq "github.com/ipfs/go-ipfs/thirdparty/pq"
 )
 
+var PEER_BLOCK_TIME time.Duration = time.Second * 5
+
+//  Type representing a decision function
+type Strategy func(*activePartner) bool
+
+//  Map of strategy names to their functions
+var Strats = map[string]Strategy{
+	"Nice" : Nice,
+	"ShouldConnect" : ShouldConnect,
+}
+
 type peerRequestQueue interface {
 	// Pop returns the next peerRequestTask. Returns nil if the peerRequestQueue is empty.
 	Pop() *peerRequestTask
 	Push(entry wantlist.Entry, to peer.ID)
 	Remove(k key.Key, p peer.ID)
+	UpdatePeer(p peer.ID)
 	// NB: cannot expose simply expose taskQueue.Len because trashed elements
 	// may exist. These trashed elements should not contribute to the count.
 }
@@ -24,16 +36,19 @@ func newPRQ() peerRequestQueue {
 	return &prq{
 		taskMap:  make(map[string]*peerRequestTask),
 		partners: make(map[peer.ID]*activePartner),
-		pQueue:   pq.New(ledgerCompare),
+		pQueue:   pq.New(partnerCompare),
+		decisionFunc:  Nice,
 	}
 }
 
-func newSmartPRQ(l map[peer.ID]*ledger) peerRequestQueue {
+//  still dumb atm
+func newSmartPRQ(l map[peer.ID]*ledger, df Strategy) peerRequestQueue {
 	return &prq{
 		taskMap:  make(map[string]*peerRequestTask),
 		partners: make(map[peer.ID]*activePartner),
 		pQueue:   pq.New(ledgerCompare),
 		ledgerMap: l,
+		decisionFunc:  df,
 	}
 }
 
@@ -50,6 +65,8 @@ type prq struct {
 	partners map[peer.ID]*activePartner
 	//  ledger map updated by engine used to make informed decisions
 	ledgerMap map[peer.ID]*ledger
+	//  determines whether or not to fulfill requests to a partner
+	decisionFunc  Strategy
 }
 
 // Push currently adds a new peerRequestTask to the end of the list
@@ -101,11 +118,13 @@ func (tl *prq) Pop() *peerRequestTask {
 	if tl.pQueue.Len() == 0 {
 		return nil
 	}
-	//  need this cause ledger maps are changing, so we need to reupdate the pq
-	//  before popping.  this also doesn't work in lots of cases so i need to find
-	//  a good way to re-sort everything in the prq when needed.
-	tl.pQueue.Update(0)
+	
 	partner := tl.pQueue.Pop().(*activePartner)
+	for !tl.decisionFunc(partner){
+		fmt.Println("in here")
+		go tl.block(partner)
+		partner = tl.pQueue.Pop().(*activePartner)
+	}
 
 	var out *peerRequestTask
 	for partner.taskQueue.Len() > 0 {
@@ -139,6 +158,38 @@ func (tl *prq) Remove(k key.Key, p peer.ID) {
 		tl.partners[p].requests--
 	}
 	tl.lock.Unlock()
+}
+
+//  Should be called when ledger information for peer with pid is updated.
+//  Updates peers position in the partner queue.
+func (tl *prq) UpdatePeer(pid peer.ID){
+	tl.lock.Lock()
+	defer tl.lock.Unlock()
+	if p, ok := tl.partners[pid]; ok{
+		tl.pQueue.Update(p.Index())
+	}
+}
+
+func (tl *prq) block(partner *activePartner){
+	time.AfterFunc(PEER_BLOCK_TIME, func(){
+		tl.pQueue.Push(partner)
+	})
+}
+
+var ShouldConnect = func(partner *activePartner) bool{
+	//  placeholder logic
+	l := partner.GetLedger()
+	if l != nil{
+		if l.Accounting.Value() < 0.01 && l.ExchangeCount() > 100{
+			fmt.Println("rekt")
+			return false
+		}
+	}
+	return true
+}
+
+var Nice = func(parnter *activePartner) bool{
+	return true
 }
 
 type peerRequestTask struct {
@@ -215,7 +266,7 @@ type activePartner struct {
 	// priority queue of tasks belonging to this peer
 	taskQueue pq.PQ
 	
-	//  kinda dirty...
+	//  kinda dirty...  but i'm not sure how else to deal with the lazily loaded ledgers
 	ledgerMap map[peer.ID]*ledger
 	pid peer.ID
 }
@@ -258,11 +309,9 @@ func ledgerCompare(a, b pq.Elem) bool {
 	// having no blocks in their wantlist means lowest priority
 	// having both of these checks ensures stability of the sort
 	if pa.requests == 0 {
-		fmt.Println("0 a reqs?")
 		return false
 	}
 	if pb.requests == 0 {
-		fmt.Println("0 b reqs?")
 		return true
 	}
 	
@@ -284,8 +333,6 @@ func ledgerCompare(a, b pq.Elem) bool {
 	}
 	
 	//  peers who've sent us more stuff should be higher priority
-	fmt.Println("here", pal.Accounting.BytesRecv, pbl.Accounting.BytesRecv)
-	fmt.Println(pa.pid)
 	return pal.Accounting.BytesRecv > pbl.Accounting.BytesRecv
 }
 

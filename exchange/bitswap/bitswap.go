@@ -3,7 +3,6 @@
 package bitswap
 
 import (
-	"fmt"
 	"errors"
 	"math"
 	"sync"
@@ -51,7 +50,7 @@ var rebroadcastDelay = delay.Fixed(time.Second * 10)
 // delegate.
 // Runs until context is cancelled.
 func New(parent context.Context, p peer.ID, network bsnet.BitSwapNetwork,
-	bstore blockstore.Blockstore, nice bool) exchange.Interface {
+	bstore blockstore.Blockstore, strategy decision.Strategy) exchange.Interface {
 
 	// important to use provided parent context (since it may include important
 	// loggable data). It's probably not a good idea to allow bitswap to be
@@ -76,12 +75,16 @@ func New(parent context.Context, p peer.ID, network bsnet.BitSwapNetwork,
 		<-ctx.Done() // parent cancelled first
 		px.Close()
 	}()
+	
+	if strategy == nil{
+		strategy = decision.Nice
+	}
 
 	bs := &Bitswap{
 		self:          p,
 		blockstore:    bstore,
 		notifications: notif,
-		engine:        decision.NewEngine(ctx, bstore), // TODO close the engine with Close() method
+		engine:        decision.NewEngine(ctx, bstore, strategy), // TODO close the engine with Close() method
 		network:       network,
 		findKeys:      make(chan *blockRequest, sizeBatchRequestChan),
 		process:       px,
@@ -276,11 +279,12 @@ func (bs *Bitswap) connectToProviders(ctx context.Context, entries []wantlist.En
 				wg.Add(1)
 				go func(p peer.ID) {
 					bs.network.ConnectTo(ctx, p)
-					fmt.Println("out shouldconnect")
-					if !bs.engine.ShouldConnect(p, &bs.network){
-						fmt.Println("in shoudlconnect")
-						bs.PeerDisconnected(p)
-					}
+//					fmt.Println("out shouldconnect")
+//					if !bs.engine.ShouldConnect(p, &bs.network){
+//						fmt.Println("in shoudlconnect")
+//						bs.network.(bsnet.SmartNet).DisconnectFrom(p)
+//						bs.PeerDisconnected(p)
+//					}
 					wg.Done()
 				}(prov)
 			}
