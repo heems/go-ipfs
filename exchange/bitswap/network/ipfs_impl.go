@@ -101,10 +101,6 @@ func (bsnet *impl) ConnectTo(ctx context.Context, p peer.ID) error {
 	return bsnet.host.Connect(ctx, peer.PeerInfo{ID: p})
 }
 
-func (bsnet *impl) DisconnectFrom(p peer.ID) error {
-	return bsnet.host.Network().ClosePeer(p)
-}
-
 func (bsnet *impl) Host() host.Host {
 	return bsnet.host
 }

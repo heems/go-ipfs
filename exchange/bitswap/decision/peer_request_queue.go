@@ -17,6 +17,8 @@ var PEER_BLOCK_TIME time.Duration = time.Second * 5
 type Strategy func(*activePartner) bool
 
 //  Map of strategy names to their functions
+//  Needed some way of having access to these strategies from bssim but I'm
+//  not sure if this is the best way to do it
 var Strats = map[string]Strategy{
 	"Nice" : Nice,
 	"Mean" : Mean,
@@ -308,8 +310,6 @@ func ledgerCompare(a, b pq.Elem) bool {
 	pa := a.(*activePartner)
 	pb := b.(*activePartner)
 	
-	// having no blocks in their wantlist means lowest priority
-	// having both of these checks ensures stability of the sort
 	if pa.requests == 0 {
 		return false
 	}
@@ -334,8 +334,12 @@ func ledgerCompare(a, b pq.Elem) bool {
 		return pal.Accounting.BytesSent < pbl.Accounting.BytesSent
 	}
 	
-	//  peers who've sent us more stuff should be higher priority
-	return pal.Accounting.BytesRecv > pbl.Accounting.BytesRecv
+	//  peers with a lower debt ratio should be higher priority
+	if pal.Accounting.Value() == pbl.Accounting.Value(){
+		return pal.Accounting.BytesRecv > pbl.Accounting.BytesRecv
+	}
+	
+	return pal.Accounting.Value() > pbl.Accounting.Value()
 }
 
 // StartTask signals that a task was started for this partner

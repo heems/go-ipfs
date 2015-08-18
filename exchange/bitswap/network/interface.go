@@ -51,10 +51,9 @@ type Routing interface {
 	Provide(context.Context, key.Key) error
 }
 
+//  Interface that can enable 
 type SmartNet interface{
 	BitSwapNetwork
-	
-	DisconnectFrom(peer.ID) error
-	
+		
 	Host() host.Host
 }
