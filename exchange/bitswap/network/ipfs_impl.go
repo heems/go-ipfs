@@ -45,7 +45,7 @@ func (bsnet *impl) newStreamToPeer(ctx context.Context, p peer.ID) (inet.Stream,
 	if err := bsnet.host.Connect(ctx, peer.PeerInfo{ID: p}); err != nil {
 		return nil, err
 	}
-
+	
 	return bsnet.host.NewStream(ProtocolBitswap, p)
 }
 

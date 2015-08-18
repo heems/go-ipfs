@@ -19,7 +19,7 @@ type Strategy func(*activePartner) bool
 //  Map of strategy names to their functions
 var Strats = map[string]Strategy{
 	"Nice" : Nice,
-	"ShouldConnect" : ShouldConnect,
+	"Mean" : Mean,
 }
 
 type peerRequestQueue interface {
@@ -176,11 +176,11 @@ func (tl *prq) block(partner *activePartner){
 	})
 }
 
-var ShouldConnect = func(partner *activePartner) bool{
+var Mean = func(partner *activePartner) bool{
 	//  placeholder logic
 	l := partner.GetLedger()
 	if l != nil{
-		if l.Accounting.Value() < 0.01 && l.ExchangeCount() > 100{
+		if l.Accounting.Value() < 0.01 && l.Accounting.BytesSent > 10000{
 			fmt.Println("rekt")
 			return false
 		}
@@ -266,7 +266,9 @@ type activePartner struct {
 	// priority queue of tasks belonging to this peer
 	taskQueue pq.PQ
 	
-	//  kinda dirty...  but i'm not sure how else to deal with the lazily loaded ledgers
+	//  kinda dirty to give each active partner all the ledgers and it's pid
+	//  instead of just its own ledger, but i'm not sure how else to deal with 
+	//  the lazily loaded ledgers
 	ledgerMap map[peer.ID]*ledger
 	pid peer.ID
 }

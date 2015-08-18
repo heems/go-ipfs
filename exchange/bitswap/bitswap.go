@@ -279,7 +279,6 @@ func (bs *Bitswap) connectToProviders(ctx context.Context, entries []wantlist.En
 				wg.Add(1)
 				go func(p peer.ID) {
 					bs.network.ConnectTo(ctx, p)
-//					fmt.Println("out shouldconnect")
 //					if !bs.engine.ShouldConnect(p, &bs.network){
 //						fmt.Println("in shoudlconnect")
 //						bs.network.(bsnet.SmartNet).DisconnectFrom(p)
